@@ -26,4 +26,10 @@ class Installer(private val context: Context) {
         Logger.i("Installing $label via system package installer")
         return SessionInstaller.install(context, apk, label)
     }
+
+    /** Silent uninstall via Shizuku. The system path is handled by the Activity. */
+    suspend fun uninstallSilent(pkg: String, label: String): InstallResult {
+        Logger.i("Uninstalling $label via Shizuku")
+        return ShizukuInstaller.uninstall(pkg)
+    }
 }

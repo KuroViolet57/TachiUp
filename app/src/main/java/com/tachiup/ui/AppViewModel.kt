@@ -3,6 +3,7 @@ package com.tachiup.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.tachiup.data.CatalogEntry
 import com.tachiup.data.ExtensionRepo
 import com.tachiup.data.ExtensionScanner
 import com.tachiup.data.ExtensionStatus
@@ -25,6 +26,7 @@ import kotlinx.coroutines.launch
 data class UiState(
     val installed: List<InstalledExtension> = emptyList(),
     val statuses: List<ExtensionStatus> = emptyList(),
+    val catalog: List<CatalogEntry> = emptyList(),
     val issues: Map<String, List<GithubIssue>> = emptyMap(),
     val scanning: Boolean = false,
     val refreshing: Boolean = false,
@@ -33,6 +35,7 @@ data class UiState(
     val useShizuku: Boolean = false,
     val shizukuAvailable: Boolean = false,
     val shizukuGranted: Boolean = false,
+    val includeNsfw: Boolean = true,
 ) {
     val updatable: List<ExtensionStatus>
         get() = statuses.filter { it.state == UpdateState.UPDATE_AVAILABLE }
@@ -44,7 +47,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val settings = Settings(app)
     private val installer = Installer(app)
 
-    private val _state = MutableStateFlow(UiState(useShizuku = settings.useShizuku))
+    private val _state = MutableStateFlow(
+        UiState(useShizuku = settings.useShizuku, includeNsfw = settings.includeNsfw),
+    )
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     /** pkg -> (repo, extension) chosen across all repositories. */
@@ -62,6 +67,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun setUseShizuku(value: Boolean) {
         settings.useShizuku = value
         _state.update { it.copy(useShizuku = value) }
+    }
+
+    fun setIncludeNsfw(value: Boolean) {
+        settings.includeNsfw = value
+        _state.update { it.copy(includeNsfw = value) }
+        recomputeStatuses()
     }
 
     fun updateShizukuState(available: Boolean, granted: Boolean) {
@@ -117,6 +128,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun recomputeStatuses() {
+        val installedByPkg = _state.value.installed.associateBy { it.pkg }
         val statuses = _state.value.installed.map { inst ->
             val match = repoMap[inst.pkg]
             ExtensionStatus(
@@ -127,7 +139,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 repo = match?.first,
             )
         }.sortedWith(compareBy({ it.state.ordinal }, { it.label.lowercase() }))
-        _state.update { it.copy(statuses = statuses) }
+
+        val includeNsfw = _state.value.includeNsfw
+        val catalog = repoMap.values
+            .asSequence()
+            .filter { includeNsfw || it.second.nsfw != 1 }
+            .map { (repo, ext) ->
+                CatalogEntry(repo, ext, installedByPkg[ext.pkg]?.versionName)
+            }
+            .sortedBy { it.ext.name.lowercase() }
+            .toList()
+
+        _state.update { it.copy(statuses = statuses, catalog = catalog) }
     }
 
     fun updateAll() {
@@ -137,24 +160,61 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun update(status: ExtensionStatus) {
         val repo = status.repo ?: return
         val ext = status.repoExtension ?: return
+        installExtension(repo, ext, status.pkg, status.label, status.installedVersion)
+    }
+
+    fun installCatalog(entry: CatalogEntry) {
+        installExtension(entry.repo, entry.ext, entry.pkg, entry.ext.name, entry.installedVersion)
+    }
+
+    private fun installExtension(
+        repo: ExtensionRepo,
+        ext: RepoExtension,
+        pkg: String,
+        label: String,
+        fromVersion: String?,
+    ) {
         val useShizuku = _state.value.useShizuku
         viewModelScope.launch {
-            _state.update { it.copy(workingPkgs = it.workingPkgs + status.pkg) }
+            _state.update { it.copy(workingPkgs = it.workingPkgs + pkg) }
             try {
-                Logger.i("Updating ${status.label} ${status.installedVersion} → ${ext.version} from ${repo.name}")
+                val action = if (fromVersion == null) "Installing" else "Updating"
+                val versionInfo = if (fromVersion == null) ext.version else "$fromVersion → ${ext.version}"
+                Logger.i("$action $label $versionInfo from ${repo.name}")
                 Logger.d("Downloading ${repo.apkUrl(ext.apk)}")
                 val apk = api.downloadApk(repo, ext, getApplication<Application>().cacheDir)
                 Logger.d("Downloaded ${apk.name} (${apk.length()} bytes)")
-                when (val r = installer.install(apk, status.pkg, status.label, useShizuku)) {
-                    is InstallResult.Success -> Logger.i("✓ ${status.label} updated to ${ext.version}")
-                    is InstallResult.PendingUserAction -> Logger.i("Confirm ${status.label} install in the system dialog")
-                    is InstallResult.Failure -> Logger.e("✗ ${status.label}: ${r.message}")
+                when (val r = installer.install(apk, pkg, label, useShizuku)) {
+                    is InstallResult.Success -> {
+                        Logger.i("✓ $label ${ext.version} installed")
+                        scan()
+                    }
+                    is InstallResult.PendingUserAction -> Logger.i("Confirm $label install in the system dialog")
+                    is InstallResult.Failure -> Logger.e("✗ $label: ${r.message}")
                 }
                 apk.delete()
             } catch (t: Throwable) {
-                Logger.e("✗ ${status.label} update failed", t)
+                Logger.e("✗ $label install failed", t)
             } finally {
-                _state.update { it.copy(workingPkgs = it.workingPkgs - status.pkg) }
+                _state.update { it.copy(workingPkgs = it.workingPkgs - pkg) }
+            }
+        }
+    }
+
+    fun uninstallSilent(pkg: String, label: String) {
+        viewModelScope.launch {
+            _state.update { it.copy(workingPkgs = it.workingPkgs + pkg) }
+            try {
+                when (val r = installer.uninstallSilent(pkg, label)) {
+                    is InstallResult.Success -> {
+                        Logger.i("✓ $label uninstalled")
+                        scan()
+                    }
+                    is InstallResult.PendingUserAction -> {}
+                    is InstallResult.Failure -> Logger.e("✗ uninstall $label: ${r.message}")
+                }
+            } finally {
+                _state.update { it.copy(workingPkgs = it.workingPkgs - pkg) }
             }
         }
     }

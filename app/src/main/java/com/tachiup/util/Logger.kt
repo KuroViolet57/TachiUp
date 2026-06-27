@@ -49,7 +49,7 @@ object Logger {
             val dir = File(context.cacheDir, "logs").apply { mkdirs() }
             file = File(dir, "tachiup.log")
         }
-        i("=== TachiUp session started (v9) ===")
+        i("=== TachiUp session started (v10) ===")
     }
 
     fun d(message: String) = add(Level.DEBUG, message, null)

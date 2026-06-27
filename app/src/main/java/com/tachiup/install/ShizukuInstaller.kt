@@ -48,6 +48,18 @@ object ShizukuInstaller {
         first
     }
 
+    suspend fun uninstall(pkg: String): InstallResult = withContext(Dispatchers.IO) {
+        if (!isAvailable()) return@withContext InstallResult.Failure("Shizuku is not running")
+        if (!hasPermission()) return@withContext InstallResult.Failure("Shizuku permission not granted")
+        val r = runCommand(arrayOf("pm", "uninstall", pkg))
+        Logger.i("Shizuku: pm uninstall $pkg -> exit=${r.exit} ${r.combined().trim()}")
+        if (r.exit == 0 && r.stdout.contains("Success")) {
+            InstallResult.Success
+        } else {
+            InstallResult.Failure(r.combined().trim().ifBlank { "pm uninstall exited ${r.exit}" })
+        }
+    }
+
     private fun runInstall(apk: File): InstallResult {
         return try {
             val size = apk.length()

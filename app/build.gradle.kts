@@ -13,8 +13,8 @@ android {
         applicationId = "com.tachiup"
         minSdk = 26
         targetSdk = 34
-        versionCode = 9
-        versionName = "v9"
+        versionCode = 10
+        versionName = "v10"
         vectorDrawables { useSupportLibrary = true }
     }
 

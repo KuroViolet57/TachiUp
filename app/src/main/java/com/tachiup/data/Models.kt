@@ -65,6 +65,18 @@ data class ExtensionStatus(
     val latestVersion: String? get() = repoExtension?.version
 }
 
+/** An extension available in a repo, shown in the browse/catalog screen. */
+data class CatalogEntry(
+    val repo: ExtensionRepo,
+    val ext: RepoExtension,
+    val installedVersion: String?,
+) {
+    val pkg: String get() = ext.pkg
+    val installed: Boolean get() = installedVersion != null
+    val hasUpdate: Boolean get() = installedVersion != null && installedVersion != ext.version
+    val nsfw: Boolean get() = ext.nsfw == 1
+}
+
 /** A GitHub issue surfaced in the community screen. */
 @Serializable
 data class GithubIssue(

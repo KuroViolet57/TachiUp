@@ -17,10 +17,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -29,17 +31,24 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tachiup.data.CatalogEntry
 import com.tachiup.data.ExtensionStatus
 import com.tachiup.data.GithubIssue
 import com.tachiup.data.Repos
@@ -51,6 +60,7 @@ fun ExtensionsScreen(
     onRefresh: () -> Unit,
     onUpdateAll: () -> Unit,
     onUpdate: (ExtensionStatus) -> Unit,
+    onUninstall: (ExtensionStatus) -> Unit,
     onOpenLog: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
@@ -99,6 +109,7 @@ fun ExtensionsScreen(
                     status = status,
                     working = status.pkg in state.workingPkgs,
                     onUpdate = { onUpdate(status) },
+                    onUninstall = { onUninstall(status) },
                 )
             }
         }
@@ -106,10 +117,15 @@ fun ExtensionsScreen(
 }
 
 @Composable
-private fun ExtensionRow(status: ExtensionStatus, working: Boolean, onUpdate: () -> Unit) {
+private fun ExtensionRow(
+    status: ExtensionStatus,
+    working: Boolean,
+    onUpdate: () -> Unit,
+    onUninstall: () -> Unit,
+) {
     Card(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().padding(12.dp),
+            Modifier.fillMaxWidth().padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
@@ -122,15 +138,135 @@ private fun ExtensionRow(status: ExtensionStatus, working: Boolean, onUpdate: ()
                 }
                 Text(sub, style = MaterialTheme.typography.bodySmall)
             }
-            when {
-                working -> CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                status.state == UpdateState.UPDATE_AVAILABLE ->
-                    Button(onClick = onUpdate) {
-                        Icon(Icons.Filled.Download, contentDescription = "Update", modifier = Modifier.size(18.dp))
+            if (working) {
+                CircularProgressIndicator(Modifier.size(22.dp).padding(end = 4.dp), strokeWidth = 2.dp)
+            } else {
+                when (status.state) {
+                    UpdateState.UPDATE_AVAILABLE ->
+                        IconButton(onClick = onUpdate) {
+                            Icon(Icons.Filled.Download, contentDescription = "Update", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    UpdateState.UP_TO_DATE ->
+                        Icon(Icons.Filled.CheckCircle, contentDescription = "Up to date", tint = MaterialTheme.colorScheme.primary)
+                    else -> {}
+                }
+                IconButton(onClick = onUninstall) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Uninstall", tint = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BrowseScreen(
+    state: UiState,
+    onInstall: (CatalogEntry) -> Unit,
+    onUninstall: (CatalogEntry) -> Unit,
+    onToggleNsfw: (Boolean) -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    var onlyNotInstalled by remember { mutableStateOf(false) }
+
+    val q = query.trim().lowercase()
+    val filtered = remember(state.catalog, q, onlyNotInstalled) {
+        state.catalog.asSequence()
+            .filter { !onlyNotInstalled || !it.installed }
+            .filter {
+                q.isEmpty() ||
+                    it.ext.name.lowercase().contains(q) ||
+                    it.ext.lang.lowercase().contains(q) ||
+                    it.pkg.lowercase().contains(q)
+            }
+            .take(500)
+            .toList()
+    }
+
+    Column(Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Browse extensions", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text("Search ${state.catalog.size} extensions") },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AssistChip(
+                onClick = { onlyNotInstalled = !onlyNotInstalled },
+                label = { Text(if (onlyNotInstalled) "Not installed ✓" else "Not installed") },
+            )
+            AssistChip(
+                onClick = { onToggleNsfw(!state.includeNsfw) },
+                label = { Text(if (state.includeNsfw) "NSFW shown" else "NSFW hidden") },
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        if (state.catalog.isEmpty()) {
+            Text("Refresh the Extensions tab first to load repository indexes.", style = MaterialTheme.typography.bodyMedium)
+        } else {
+            Text(
+                "Showing ${filtered.size}${if (filtered.size >= 500) "+ (refine search)" else ""}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(filtered, key = { it.pkg }) { entry ->
+                CatalogRow(
+                    entry = entry,
+                    working = entry.pkg in state.workingPkgs,
+                    onInstall = { onInstall(entry) },
+                    onUninstall = { onUninstall(entry) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CatalogRow(
+    entry: CatalogEntry,
+    working: Boolean,
+    onInstall: () -> Unit,
+    onUninstall: () -> Unit,
+) {
+    Card(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                val nsfw = if (entry.nsfw) " · 18+" else ""
+                Text(entry.ext.name, fontWeight = FontWeight.SemiBold)
+                val sub = when {
+                    entry.hasUpdate -> "${entry.installedVersion} → ${entry.ext.version} · ${entry.repo.name}"
+                    entry.installed -> "installed ${entry.ext.version} · ${entry.repo.name}"
+                    else -> "${entry.ext.version} · ${entry.ext.lang} · ${entry.repo.name}$nsfw"
+                }
+                Text(sub, style = MaterialTheme.typography.bodySmall)
+            }
+            if (working) {
+                CircularProgressIndicator(Modifier.size(22.dp).padding(end = 4.dp), strokeWidth = 2.dp)
+            } else {
+                IconButton(onClick = onInstall) {
+                    Icon(
+                        Icons.Filled.Download,
+                        contentDescription = if (entry.hasUpdate) "Update" else "Install",
+                        tint = if (entry.installed && !entry.hasUpdate)
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        else
+                            MaterialTheme.colorScheme.primary,
+                    )
+                }
+                if (entry.installed) {
+                    IconButton(onClick = onUninstall) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Uninstall", tint = MaterialTheme.colorScheme.error)
                     }
-                status.state == UpdateState.UP_TO_DATE ->
-                    Icon(Icons.Filled.CheckCircle, contentDescription = "Up to date", tint = MaterialTheme.colorScheme.primary)
-                else -> {}
+                }
             }
         }
     }
@@ -259,7 +395,7 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(16.dp))
-        Text("TachiUp v9", style = MaterialTheme.typography.bodySmall)
+        Text("TachiUp v10", style = MaterialTheme.typography.bodySmall)
     }
 }
 

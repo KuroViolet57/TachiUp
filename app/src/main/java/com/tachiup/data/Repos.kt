@@ -18,7 +18,15 @@ object Repos {
         githubRepo = "yuzono/manga-repo",
     )
 
-    val ALL = listOf(KEIYOUSHI, YUZONO)
+    val YUZONO_CURSED = ExtensionRepo(
+        key = "yuzono-cursed",
+        name = "Yuzono Cursed",
+        baseUrl = "https://raw.githubusercontent.com/yuzono/cursed-manga-repo/repo",
+        discordUrl = "https://discord.gg/yuzono",
+        githubRepo = "yuzono/cursed-manga-repo",
+    )
+
+    val ALL = listOf(KEIYOUSHI, YUZONO, YUZONO_CURSED)
 
     fun byKey(key: String): ExtensionRepo? = ALL.firstOrNull { it.key == key }
 }

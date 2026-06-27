@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Settings
@@ -38,6 +39,9 @@ import com.tachiup.ui.AppViewModel
 import com.tachiup.ui.CommunityScreen
 import com.tachiup.ui.ExtensionsScreen
 import com.tachiup.ui.LogPanel
+import com.tachiup.data.CatalogEntry
+import com.tachiup.install.ShizukuInstaller
+import com.tachiup.ui.BrowseScreen
 import com.tachiup.ui.SettingsScreen
 import com.tachiup.ui.theme.TachiUpTheme
 import com.tachiup.util.Logger
@@ -71,6 +75,7 @@ class MainActivity : ComponentActivity() {
                     vm = vm,
                     onOpenUrl = ::openUrl,
                     onRequestShizuku = ::requestShizuku,
+                    onUninstall = { pkg, label -> uninstall(pkg, label) },
                     onShareLog = ::shareLog,
                     onCopyLog = ::copyLog,
                     onClearLog = { Logger.clear() },
@@ -80,6 +85,27 @@ class MainActivity : ComponentActivity() {
 
         vm.refreshAll()
         vm.refreshIssues()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Reflect installs/uninstalls that happened via the system dialog.
+        vm.scan()
+    }
+
+    /** Routes uninstall to silent Shizuku when possible, else the system uninstall dialog. */
+    private fun uninstall(pkg: String, label: String) {
+        val s = vm.state.value
+        val canSilent = s.useShizuku &&
+            ShizukuInstaller.isAvailable() && ShizukuInstaller.hasPermission()
+        if (canSilent) {
+            vm.uninstallSilent(pkg, label)
+        } else {
+            Logger.i("Requesting system uninstall for $label")
+            runCatching {
+                startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:$pkg")))
+            }.onFailure { Logger.e("Failed to launch uninstall for $label", it) }
+        }
     }
 
     override fun onDestroy() {
@@ -152,6 +178,7 @@ private fun AppRoot(
     onShareLog: () -> Unit,
     onCopyLog: () -> Unit,
     onClearLog: () -> Unit,
+    onUninstall: (String, String) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val logEntries by Logger.entries.collectAsStateWithLifecycle()
@@ -165,17 +192,23 @@ private fun AppRoot(
                     selected = tab == 0,
                     onClick = { tab = 0 },
                     icon = { Icon(Icons.Filled.Extension, contentDescription = null) },
-                    label = { Text("Extensions") },
+                    label = { Text("Installed") },
                 )
                 NavigationBarItem(
                     selected = tab == 1,
-                    onClick = { tab = 1; vm.refreshIssues() },
+                    onClick = { tab = 1 },
+                    icon = { Icon(Icons.Filled.Explore, contentDescription = null) },
+                    label = { Text("Browse") },
+                )
+                NavigationBarItem(
+                    selected = tab == 2,
+                    onClick = { tab = 2; vm.refreshIssues() },
                     icon = { Icon(Icons.Filled.Forum, contentDescription = null) },
                     label = { Text("Community") },
                 )
                 NavigationBarItem(
-                    selected = tab == 2,
-                    onClick = { tab = 2 },
+                    selected = tab == 3,
+                    onClick = { tab = 3 },
                     icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
                     label = { Text("Settings") },
                 )
@@ -189,14 +222,21 @@ private fun AppRoot(
                     onRefresh = { vm.refreshAll() },
                     onUpdateAll = { vm.updateAll() },
                     onUpdate = { vm.update(it) },
+                    onUninstall = { onUninstall(it.pkg, it.label) },
                     onOpenLog = { showLog = true },
                 )
-                1 -> CommunityScreen(
+                1 -> BrowseScreen(
+                    state = state,
+                    onInstall = { vm.installCatalog(it) },
+                    onUninstall = { onUninstall(it.pkg, it.ext.name) },
+                    onToggleNsfw = { vm.setIncludeNsfw(it) },
+                )
+                2 -> CommunityScreen(
                     state = state,
                     onRefresh = { vm.refreshIssues() },
                     onOpenUrl = onOpenUrl,
                 )
-                2 -> SettingsScreen(
+                3 -> SettingsScreen(
                     state = state,
                     onToggleShizuku = { vm.setUseShizuku(it) },
                     onRequestShizuku = onRequestShizuku,
