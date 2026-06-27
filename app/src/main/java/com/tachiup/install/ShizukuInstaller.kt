@@ -1,5 +1,6 @@
 package com.tachiup.install
 
+import com.tachiup.util.Logger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
@@ -25,13 +26,33 @@ object ShizukuInstaller {
         false
     }
 
-    suspend fun install(apk: File): InstallResult = withContext(Dispatchers.IO) {
+    /**
+     * Installs [apk]. If a signature mismatch is detected and [pkg] is known,
+     * automatically uninstalls the existing extension and retries (the silent
+     * path is intended for power users, so this keeps updates working).
+     */
+    suspend fun install(apk: File, pkg: String?): InstallResult = withContext(Dispatchers.IO) {
         if (!isAvailable()) return@withContext InstallResult.Failure("Shizuku is not running")
         if (!hasPermission()) return@withContext InstallResult.Failure("Shizuku permission not granted")
 
-        try {
+        val first = runInstall(apk)
+        if (first is InstallResult.Success) return@withContext first
+
+        val message = (first as? InstallResult.Failure)?.message.orEmpty()
+        if (pkg != null && isSignatureMismatch(message)) {
+            Logger.w("Shizuku: signature mismatch for $pkg, uninstalling and retrying")
+            val uninstall = runCommand(arrayOf("pm", "uninstall", pkg))
+            Logger.i("Shizuku: pm uninstall $pkg -> exit=${uninstall.exit} ${uninstall.combined().trim()}")
+            return@withContext runInstall(apk)
+        }
+        first
+    }
+
+    private fun runInstall(apk: File): InstallResult {
+        return try {
             val size = apk.length()
-            val process = newProcess(arrayOf("sh", "-c", "pm install -r -S $size"))
+            Logger.d("Shizuku: pm install -r -S $size (${apk.name})")
+            val process = newProcess(arrayOf("pm", "install", "-r", "-S", size.toString()))
             process.outputStream.use { out ->
                 apk.inputStream().use { input -> input.copyTo(out) }
                 out.flush()
@@ -39,15 +60,37 @@ object ShizukuInstaller {
             val stdout = process.inputStream.bufferedReader().readText()
             val stderr = process.errorStream.bufferedReader().readText()
             val exit = process.waitFor()
-            if (exit == 0 && (stdout.contains("Success") || stderr.isBlank())) {
+            val combined = (stdout + stderr).trim()
+            Logger.i("Shizuku: pm install exit=$exit ${combined.ifBlank { "(no output)" }}")
+            if (exit == 0 && stdout.contains("Success")) {
                 InstallResult.Success
             } else {
-                InstallResult.Failure((stderr + stdout).trim().ifBlank { "pm install exited $exit" })
+                InstallResult.Failure(combined.ifBlank { "pm install exited $exit" })
             }
         } catch (t: Throwable) {
+            Logger.e("Shizuku: install threw", t)
             InstallResult.Failure(t.message ?: "Shizuku install failed")
         }
     }
+
+    private data class CmdResult(val exit: Int, val stdout: String, val stderr: String) {
+        fun combined() = (stdout + stderr)
+    }
+
+    private fun runCommand(cmd: Array<String>): CmdResult = try {
+        val p = newProcess(cmd)
+        val out = p.inputStream.bufferedReader().readText()
+        val err = p.errorStream.bufferedReader().readText()
+        CmdResult(p.waitFor(), out, err)
+    } catch (t: Throwable) {
+        Logger.e("Shizuku: command ${cmd.joinToString(" ")} threw", t)
+        CmdResult(-1, "", t.message ?: "")
+    }
+
+    private fun isSignatureMismatch(message: String): Boolean =
+        message.contains("INSTALL_FAILED_UPDATE_INCOMPATIBLE") ||
+            message.contains("signatures do not match") ||
+            message.contains("INCONSISTENT_CERTIFICATES")
 
     /** Shizuku.newProcess is a restricted API; reach it reflectively. */
     private fun newProcess(cmd: Array<String>): Process {

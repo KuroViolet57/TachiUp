@@ -15,6 +15,7 @@ import com.tachiup.data.Settings
 import com.tachiup.data.UpdateState
 import com.tachiup.install.Installer
 import com.tachiup.install.InstallResult
+import com.tachiup.util.Logger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,7 +33,6 @@ data class UiState(
     val useShizuku: Boolean = false,
     val shizukuAvailable: Boolean = false,
     val shizukuGranted: Boolean = false,
-    val log: List<String> = emptyList(),
 ) {
     val updatable: List<ExtensionStatus>
         get() = statuses.filter { it.state == UpdateState.UPDATE_AVAILABLE }
@@ -50,6 +50,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** pkg -> (repo, extension) chosen across all repositories. */
     private var repoMap: Map<String, Pair<ExtensionRepo, RepoExtension>> = emptyMap()
 
+    init {
+        Logger.init(app)
+    }
+
     fun refreshAll() {
         refreshRepos()
         scan()
@@ -64,16 +68,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(shizukuAvailable = available, shizukuGranted = granted) }
     }
 
-    private fun log(msg: String) {
-        _state.update { it.copy(log = (it.log + msg).takeLast(50)) }
-    }
-
     fun scan() {
         viewModelScope.launch {
             _state.update { it.copy(scanning = true) }
             val installed = runCatching { scanner.scan() }.getOrElse {
-                log("Scan failed: ${it.message}"); emptyList()
+                Logger.e("Scan failed", it); emptyList()
             }
+            Logger.i("Scanned device: ${installed.size} extension(s) found")
             _state.update { it.copy(installed = installed, scanning = false) }
             recomputeStatuses()
         }
@@ -86,7 +87,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             for (repo in Repos.ALL) {
                 runCatching { api.fetchIndex(repo) }
                     .onSuccess { list ->
-                        log("${repo.name}: ${list.size} extensions")
+                        Logger.i("${repo.name}: ${list.size} extensions in index")
                         for (ext in list) {
                             val existing = map[ext.pkg]
                             if (existing == null || isNewer(ext.version, existing.second.version)) {
@@ -94,7 +95,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                             }
                         }
                     }
-                    .onFailure { log("${repo.name} index failed: ${it.message}") }
+                    .onFailure { Logger.e("${repo.name} index fetch failed", it) }
             }
             repoMap = map
             _state.update { it.copy(refreshing = false) }
@@ -109,7 +110,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             for (repo in Repos.ALL) {
                 runCatching { api.fetchIssues(repo) }
                     .onSuccess { result[repo.key] = it }
-                    .onFailure { log("${repo.name} issues failed: ${it.message}") }
+                    .onFailure { Logger.e("${repo.name} issues fetch failed", it) }
             }
             _state.update { it.copy(issues = result, loadingIssues = false) }
         }
@@ -136,20 +137,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun update(status: ExtensionStatus) {
         val repo = status.repo ?: return
         val ext = status.repoExtension ?: return
+        val useShizuku = _state.value.useShizuku
         viewModelScope.launch {
             _state.update { it.copy(workingPkgs = it.workingPkgs + status.pkg) }
             try {
-                log("Downloading ${status.label} ${ext.version}…")
+                Logger.i("Updating ${status.label} ${status.installedVersion} → ${ext.version} from ${repo.name}")
+                Logger.d("Downloading ${repo.apkUrl(ext.apk)}")
                 val apk = api.downloadApk(repo, ext, getApplication<Application>().cacheDir)
-                log("Installing ${status.label}…")
-                when (val r = installer.install(apk, _state.value.useShizuku)) {
-                    is InstallResult.Success -> log("✓ ${status.label} installed")
-                    is InstallResult.PendingUserAction -> log("Confirm ${status.label} install in the dialog")
-                    is InstallResult.Failure -> log("✗ ${status.label}: ${r.message}")
+                Logger.d("Downloaded ${apk.name} (${apk.length()} bytes)")
+                when (val r = installer.install(apk, status.pkg, status.label, useShizuku)) {
+                    is InstallResult.Success -> Logger.i("✓ ${status.label} updated to ${ext.version}")
+                    is InstallResult.PendingUserAction -> Logger.i("Confirm ${status.label} install in the system dialog")
+                    is InstallResult.Failure -> Logger.e("✗ ${status.label}: ${r.message}")
                 }
                 apk.delete()
             } catch (t: Throwable) {
-                log("✗ ${status.label}: ${t.message}")
+                Logger.e("✗ ${status.label} update failed", t)
             } finally {
                 _state.update { it.copy(workingPkgs = it.workingPkgs - status.pkg) }
             }

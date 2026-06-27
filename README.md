@@ -16,6 +16,11 @@ and a community tab linking each repo's **Discord** and **GitHub issues**.
   Falls back to the system package installer otherwise.
 - **Community tab** — open each repository's Discord and browse its open GitHub
   issues / announcements directly in the app.
+- **Diagnostic log** — every scan/download/install step is logged with detailed
+  failure reasons (`pm` exit codes + stderr, PackageInstaller status messages).
+  Open it from the log icon on the Extensions screen and **copy** or **export/share**
+  it as a `.txt`. Signature-mismatch failures are detected and explained; the
+  Shizuku path can auto-reinstall in that case.
 
 ## Repositories targeted
 
@@ -50,7 +55,7 @@ zipalign -p -f 4 app/build/outputs/apk/release/app-release-unsigned.apk aligned.
 apksigner sign --ks <keystore> --ks-key-alias <alias> --out TachiUp.apk aligned.apk
 ```
 
-Current version: **versionCode 8 / versionName v8**.
+Current version: **versionCode 8 / versionName v9**.
 
 ## Uploading a build to Google Drive
 
@@ -59,7 +64,7 @@ Credentials are read from the environment (never commit them):
 
 ```bash
 export GDRIVE_CLIENT_ID=... GDRIVE_CLIENT_SECRET=... GDRIVE_REFRESH_TOKEN=...
-python3 scripts/upload_to_drive.py TachiUp-v8.apk v8 TachiUpi
+python3 scripts/upload_to_drive.py TachiUp-v9.apk v9 TachiUpi
 ```
 
 ## Notes

@@ -1,9 +1,13 @@
 package com.tachiup
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import androidx.core.content.FileProvider
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -36,6 +40,7 @@ import com.tachiup.ui.ExtensionsScreen
 import com.tachiup.ui.LogPanel
 import com.tachiup.ui.SettingsScreen
 import com.tachiup.ui.theme.TachiUpTheme
+import com.tachiup.util.Logger
 import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
@@ -66,6 +71,9 @@ class MainActivity : ComponentActivity() {
                     vm = vm,
                     onOpenUrl = ::openUrl,
                     onRequestShizuku = ::requestShizuku,
+                    onShareLog = ::shareLog,
+                    onCopyLog = ::copyLog,
+                    onClearLog = { Logger.clear() },
                 )
             }
         }
@@ -109,6 +117,27 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun shareLog() {
+        runCatching {
+            val file = Logger.exportFile(this)
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+            val intent = Intent(Intent.ACTION_SEND)
+                .setType("text/plain")
+                .putExtra(Intent.EXTRA_STREAM, uri)
+                .putExtra(Intent.EXTRA_SUBJECT, "TachiUp log")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            startActivity(Intent.createChooser(intent, "Export TachiUp log"))
+        }.onFailure { Logger.e("Failed to share log", it) }
+    }
+
+    private fun copyLog() {
+        runCatching {
+            val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("TachiUp log", Logger.exportText()))
+            Logger.i("Log copied to clipboard")
+        }.onFailure { Logger.e("Failed to copy log", it) }
+    }
+
     companion object {
         private const val SHIZUKU_REQUEST_CODE = 4001
     }
@@ -120,8 +149,12 @@ private fun AppRoot(
     vm: AppViewModel,
     onOpenUrl: (String) -> Unit,
     onRequestShizuku: () -> Unit,
+    onShareLog: () -> Unit,
+    onCopyLog: () -> Unit,
+    onClearLog: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val logEntries by Logger.entries.collectAsStateWithLifecycle()
     var tab by remember { mutableIntStateOf(0) }
     var showLog by remember { mutableStateOf(false) }
 
@@ -175,7 +208,12 @@ private fun AppRoot(
 
     if (showLog) {
         ModalBottomSheet(onDismissRequest = { showLog = false }) {
-            LogPanel(state)
+            LogPanel(
+                entries = logEntries,
+                onShare = onShareLog,
+                onCopy = onCopyLog,
+                onClear = onClearLog,
+            )
         }
     }
 }

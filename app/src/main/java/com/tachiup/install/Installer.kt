@@ -1,18 +1,29 @@
 package com.tachiup.install
 
 import android.content.Context
+import com.tachiup.util.Logger
 import java.io.File
 
 /** Routes installs to Shizuku (silent) when requested/available, else the platform installer. */
 class Installer(private val context: Context) {
 
-    suspend fun install(apk: File, preferShizuku: Boolean): InstallResult {
-        if (preferShizuku && ShizukuInstaller.isAvailable()) {
-            if (!ShizukuInstaller.hasPermission()) {
+    suspend fun install(
+        apk: File,
+        pkg: String,
+        label: String,
+        preferShizuku: Boolean,
+    ): InstallResult {
+        if (preferShizuku) {
+            if (!ShizukuInstaller.isAvailable()) {
+                Logger.w("Shizuku requested but not running — falling back to system installer")
+            } else if (!ShizukuInstaller.hasPermission()) {
                 return InstallResult.Failure("Grant Shizuku permission in Settings first")
+            } else {
+                Logger.i("Installing $label via Shizuku (silent)")
+                return ShizukuInstaller.install(apk, pkg)
             }
-            return ShizukuInstaller.install(apk)
         }
-        return SessionInstaller.install(context, apk)
+        Logger.i("Installing $label via system package installer")
+        return SessionInstaller.install(context, apk, label)
     }
 }

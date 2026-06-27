@@ -10,14 +10,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -255,25 +259,50 @@ fun SettingsScreen(
         }
 
         Spacer(Modifier.height(16.dp))
-        Text("TachiUp v8", style = MaterialTheme.typography.bodySmall)
+        Text("TachiUp v9", style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
-fun LogPanel(state: UiState) {
-    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-        Text("Activity log", style = MaterialTheme.typography.titleMedium)
+fun LogPanel(
+    entries: List<com.tachiup.util.Logger.Entry>,
+    onShare: () -> Unit,
+    onCopy: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().heightIn(max = 560.dp).padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Activity log (${entries.size})",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onCopy) { Icon(Icons.Filled.ContentCopy, contentDescription = "Copy") }
+            IconButton(onClick = onShare) { Icon(Icons.Filled.Share, contentDescription = "Export") }
+            IconButton(onClick = onClear) { Icon(Icons.Filled.DeleteSweep, contentDescription = "Clear") }
+        }
         Divider(Modifier.padding(vertical = 8.dp))
-        if (state.log.isEmpty()) {
+        if (entries.isEmpty()) {
             Text("No activity yet.", style = MaterialTheme.typography.bodySmall)
         }
-        state.log.asReversed().forEach { line ->
-            Text(
-                line,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                style = MaterialTheme.typography.bodySmall,
-            )
+        LazyColumn(
+            modifier = Modifier.weight(1f, fill = false),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            items(entries.asReversed()) { entry ->
+                val color = when (entry.level) {
+                    com.tachiup.util.Logger.Level.ERROR -> MaterialTheme.colorScheme.error
+                    com.tachiup.util.Logger.Level.WARN -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.onSurface
+                }
+                Text(
+                    entry.format(),
+                    color = color,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
         }
     }
 }
