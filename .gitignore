@@ -12,3 +12,5 @@ local.keystore
 *.jks
 release/
 .kotlin/
+*.apk
+*.idsig
