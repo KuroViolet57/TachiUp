@@ -2,6 +2,7 @@ package com.tachiup.util
 
 import android.content.Context
 import android.util.Log
+import com.tachiup.BuildConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,7 +50,7 @@ object Logger {
             val dir = File(context.cacheDir, "logs").apply { mkdirs() }
             file = File(dir, "tachiup.log")
         }
-        i("=== TachiUp session started (v10) ===")
+        i("=== TachiUp session started (${BuildConfig.VERSION_NAME}) ===")
     }
 
     fun d(message: String) = add(Level.DEBUG, message, null)

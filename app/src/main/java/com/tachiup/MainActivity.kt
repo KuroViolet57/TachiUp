@@ -39,7 +39,9 @@ import com.tachiup.ui.AppViewModel
 import com.tachiup.ui.CommunityScreen
 import com.tachiup.ui.ExtensionsScreen
 import com.tachiup.ui.LogPanel
-import com.tachiup.data.CatalogEntry
+import com.tachiup.data.ExtensionRepo
+import com.tachiup.data.ReaderApp
+import com.tachiup.data.ReaderApps
 import com.tachiup.install.ShizukuInstaller
 import com.tachiup.ui.BrowseScreen
 import com.tachiup.ui.SettingsScreen
@@ -76,6 +78,7 @@ class MainActivity : ComponentActivity() {
                     onOpenUrl = ::openUrl,
                     onRequestShizuku = ::requestShizuku,
                     onUninstall = { pkg, label -> uninstall(pkg, label) },
+                    onAddStoreToApp = ::addStoreToApp,
                     onShareLog = ::shareLog,
                     onCopyLog = ::copyLog,
                     onClearLog = { Logger.clear() },
@@ -106,6 +109,13 @@ class MainActivity : ComponentActivity() {
                 startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:$pkg")))
             }.onFailure { Logger.e("Failed to launch uninstall for $label", it) }
         }
+    }
+
+    /** Opens the reader app's "add extension store" dialog so its extensions are trusted automatically. */
+    private fun addStoreToApp(app: ReaderApp, repo: ExtensionRepo) {
+        Logger.i("Opening ${app.label} to add the ${repo.name} store")
+        runCatching { startActivity(ReaderApps.addStoreIntent(app, repo)) }
+            .onFailure { Logger.e("Failed to open ${app.label}", it) }
     }
 
     override fun onDestroy() {
@@ -179,6 +189,7 @@ private fun AppRoot(
     onCopyLog: () -> Unit,
     onClearLog: () -> Unit,
     onUninstall: (String, String) -> Unit,
+    onAddStoreToApp: (ReaderApp, ExtensionRepo) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val logEntries by Logger.entries.collectAsStateWithLifecycle()
@@ -221,15 +232,21 @@ private fun AppRoot(
                     state = state,
                     onRefresh = { vm.refreshAll() },
                     onUpdateAll = { vm.updateAll() },
+                    onReinstallForeign = { vm.reinstallForeignSigned() },
                     onUpdate = { vm.update(it) },
                     onUninstall = { onUninstall(it.pkg, it.label) },
                     onOpenLog = { showLog = true },
+                    onOpenTrustSetup = { tab = 3 },
                 )
                 1 -> BrowseScreen(
                     state = state,
                     onInstall = { vm.installCatalog(it) },
                     onUninstall = { onUninstall(it.pkg, it.ext.name) },
                     onToggleNsfw = { vm.setIncludeNsfw(it) },
+                    onToggleSelected = { vm.toggleSelected(it) },
+                    onSelect = { vm.select(it) },
+                    onClearSelection = { vm.clearSelection() },
+                    onInstallSelected = { vm.installSelected() },
                 )
                 2 -> CommunityScreen(
                     state = state,
@@ -241,6 +258,7 @@ private fun AppRoot(
                     onToggleShizuku = { vm.setUseShizuku(it) },
                     onRequestShizuku = onRequestShizuku,
                     onOpenUrl = onOpenUrl,
+                    onAddStoreToApp = onAddStoreToApp,
                 )
             }
         }

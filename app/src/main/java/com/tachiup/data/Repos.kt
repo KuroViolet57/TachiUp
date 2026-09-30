@@ -1,32 +1,19 @@
 package com.tachiup.data
 
-/** Built-in repositories targeted by TachiUp. */
+/** Extension stores targeted by TachiUp. */
 object Repos {
+    /**
+     * Keiyoushi is the only maintained store now: Yuzono's repos were deprecated and point at it.
+     * The legacy index URL is kept on purpose — it's the one every Mihon/Komikku version accepts,
+     * and newer versions follow it through repo.json to the protobuf index, same as TachiUp.
+     */
     val KEIYOUSHI = ExtensionRepo(
         key = "keiyoushi",
         name = "Keiyoushi",
-        baseUrl = "https://raw.githubusercontent.com/keiyoushi/extensions/repo",
+        storeUrl = "https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.min.json",
         discordUrl = "https://discord.gg/3FbCpdKbdY",
-        githubRepo = "keiyoushi/extensions",
+        githubRepo = "keiyoushi/extensions-source",
     )
 
-    val YUZONO = ExtensionRepo(
-        key = "yuzono",
-        name = "Yuzono",
-        baseUrl = "https://raw.githubusercontent.com/yuzono/manga-repo/repo",
-        discordUrl = "https://discord.gg/yuzono",
-        githubRepo = "yuzono/manga-repo",
-    )
-
-    val YUZONO_CURSED = ExtensionRepo(
-        key = "yuzono-cursed",
-        name = "Yuzono Cursed",
-        baseUrl = "https://raw.githubusercontent.com/yuzono/cursed-manga-repo/repo",
-        discordUrl = "https://discord.gg/yuzono",
-        githubRepo = "yuzono/cursed-manga-repo",
-    )
-
-    val ALL = listOf(KEIYOUSHI, YUZONO, YUZONO_CURSED)
-
-    fun byKey(key: String): ExtensionRepo? = ALL.firstOrNull { it.key == key }
+    val ALL = listOf(KEIYOUSHI)
 }

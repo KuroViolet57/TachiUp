@@ -13,8 +13,8 @@ android {
         applicationId = "com.tachiup"
         minSdk = 26
         targetSdk = 34
-        versionCode = 10
-        versionName = "v10"
+        versionCode = 11
+        versionName = "v11"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -63,10 +63,14 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-protobuf:1.7.3")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }

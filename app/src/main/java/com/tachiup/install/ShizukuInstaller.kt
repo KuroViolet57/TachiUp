@@ -27,9 +27,10 @@ object ShizukuInstaller {
     }
 
     /**
-     * Installs [apk]. If a signature mismatch is detected and [pkg] is known,
-     * automatically uninstalls the existing extension and retries (the silent
-     * path is intended for power users, so this keeps updates working).
+     * Installs [apk]. If the installed copy can't be replaced in place (different signing key, or
+     * a higher version code from another source) and [pkg] is known, automatically uninstalls the
+     * existing extension and retries (the silent path is intended for power users, so this keeps
+     * updates working and lets foreign-signed builds be swapped for the store's).
      */
     suspend fun install(apk: File, pkg: String?): InstallResult = withContext(Dispatchers.IO) {
         if (!isAvailable()) return@withContext InstallResult.Failure("Shizuku is not running")
@@ -39,8 +40,13 @@ object ShizukuInstaller {
         if (first is InstallResult.Success) return@withContext first
 
         val message = (first as? InstallResult.Failure)?.message.orEmpty()
-        if (pkg != null && isSignatureMismatch(message)) {
-            Logger.w("Shizuku: signature mismatch for $pkg, uninstalling and retrying")
+        val conflict = when {
+            isSignatureMismatch(message) -> "signature mismatch"
+            message.contains("INSTALL_FAILED_VERSION_DOWNGRADE") -> "installed version is newer"
+            else -> null
+        }
+        if (pkg != null && conflict != null) {
+            Logger.w("Shizuku: $conflict for $pkg, uninstalling and retrying")
             val uninstall = runCommand(arrayOf("pm", "uninstall", pkg))
             Logger.i("Shizuku: pm uninstall $pkg -> exit=${uninstall.exit} ${uninstall.combined().trim()}")
             return@withContext runInstall(apk)
